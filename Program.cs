@@ -8,14 +8,20 @@ using Kusto.Data;
 using Kusto.Ingest;
 using System.Net.Sockets;
 using System.Net;
+using System.Text.Json;
 
 namespace syslogToKusto
 {
     internal class Program
     {
+        private static readonly IPEndPoint _blankEndpoint = new IPEndPoint(IPAddress.Any, 0);
+        private static readonly JsonSerializerOptions serializerOptions = new JsonSerializerOptions();
+
         static void Main(string[] args)
         {
             Settings settings = GetSettings();
+
+            serializerOptions.WriteIndented = false;
 
             using var loggerFactory = LoggerFactory.Create(builder =>
             {
@@ -37,11 +43,11 @@ namespace syslogToKusto
 
             var tasks = new List<Task>();
             var ingestionJobs = new ConcurrentQueue<IngestionJob>();
-            var messages = new ConcurrentQueue<String>();
+            var messages = new ConcurrentQueue<string>();
 
             tasks.Add(Task.Run(() => Batch(logger, settings.BatchSettings, messages, ingestionJobs)));
 
-            tasks.Add(Task.Run(() => Listen(logger, settings.ListenIP, settings.ListenPort, messages)));
+            tasks.Add(Task.Run(() => Listen(logger, settings.ListenPort, messages, settings.SyslogServerName)));
             tasks.Add(Task.Run(() => SendToKusto(logger, ingestionJobs, settings.Kusto)));
 
             logger.LogInformation($"Created {tasks.Count} tasks to work on ingestion of syslog data into kusto");
@@ -49,32 +55,55 @@ namespace syslogToKusto
             Task.WaitAll(tasks.ToArray());
         }
 
-        private static async Task Listen(ILogger logger, string listenIP, int listenPort, ConcurrentQueue<String> messages)
+        private static async Task Listen(ILogger logger, int listenPort, ConcurrentQueue<string> messages, string syslogServerName)
         {
-            IPEndPoint anyIP = new IPEndPoint(IPAddress.Parse(listenIP), 0);
-            UdpClient udpListener = new UdpClient(listenPort);
-            byte[] bytesReceived; 
+            using var udpSocket = new Socket(SocketType.Dgram, ProtocolType.Udp);
+
+            udpSocket.Bind(new IPEndPoint(IPAddress.Any, listenPort));
+
+            logger.LogInformation($"Listening {listenPort}");
+
+            await DoReceiveAsync(logger, udpSocket, messages, syslogServerName);
+        }
+
+        private static async Task DoReceiveAsync(ILogger logger, Socket udpSocket, ConcurrentQueue<string> messages, string syslogServerName)
+        {
+            byte[] buffer = GC.AllocateArray<byte>(length: 1000, pinned: true);
+            Memory<byte> bufferMem = buffer.AsMemory();
+
             string syslogMessage;
 
-            /* Main Loop */
-            /* Listen for incoming data on udp port 514 (default for SysLog events) */
             while (true)
             {
                 try
                 {
-                    bytesReceived = udpListener.Receive(ref anyIP);
-                    syslogMessage = Encoding.UTF8.GetString(bytesReceived);
+                    var result = await udpSocket.ReceiveFromAsync(bufferMem, SocketFlags.None, _blankEndpoint);
+
+                    syslogMessage = CreateMessageForKusto(Encoding.UTF8.GetString(bufferMem.ToArray(), 0, result.ReceivedBytes), result, syslogServerName);
+
                     messages.Enqueue(syslogMessage);
                 }
-                catch (Exception ex) 
+                catch (Exception e)
                 {
-                    logger.LogError(ex, "Error receiving and transforming syslog nessage");
+                    logger.LogError(e, "Error receiving message from socket");
                 }
             }
         }
 
+        private static string CreateMessageForKusto(string payload, SocketReceiveFromResult result, string syslogServerName)
+        {
+            MessageForKusto helper = new MessageForKusto();
+
+            helper.Payload = payload.Trim();
+            helper.ReceivedBytes = result.ReceivedBytes;
+            helper.RemoteEndPoint = result.RemoteEndPoint;
+            helper.SyslogServerName = syslogServerName;
+
+            return JsonSerializer.Serialize(helper, serializerOptions);
+        }
+
         private static void Batch(ILogger logger,
-            SettingsBatching batchSettings, ConcurrentQueue<String> messages, ConcurrentQueue<IngestionJob> ingestionJobs)
+            SettingsBatching batchSettings, ConcurrentQueue<string> messages, ConcurrentQueue<IngestionJob> ingestionJobs)
         {
             var timeLimit = batchSettings.BatchLimitInMinutes * 60 * 1000;
 
@@ -133,7 +162,8 @@ namespace syslogToKusto
                     {
                         //Ingest from blobs according to the required properties
                         var kustoIngestionProperties = new KustoIngestionProperties(databaseName: kusto.DbName, tableName: job.BatchInfo.KustoTable);
-                        kustoIngestionProperties.Format = Kusto.Data.Common.DataSourceFormat.txt;
+                        kustoIngestionProperties.SetAppropriateMappingReference(job.BatchInfo.MappingName, Kusto.Data.Common.DataSourceFormat.multijson);
+                        kustoIngestionProperties.Format = Kusto.Data.Common.DataSourceFormat.multijson;
 
                         logger.LogDebug($"About start ingestion into table {job.BatchInfo.KustoTable} using file {job.ToBeIngested}");
 

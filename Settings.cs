@@ -5,7 +5,8 @@ namespace syslogToKusto
     {
         public string APPINSIGHTS_CONNECTIONSTRING { get; set; } = null!;
 
-        public string ListenIP { get; set; }
+        public String SyslogServerName { get; set; }
+        
         public int ListenPort { get; set; }
 
         public SettingsKusto Kusto { get; set; } = null!;
