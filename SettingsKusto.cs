@@ -7,7 +7,7 @@
         public string TenantId { get; set; }
         public string ClusterName { get; set; }
         public string DbName { get; set; }
-        public int MaxRetries { get; set; }
-        public int MsBetweenRetries { get; set; }
+        public int MaxRetries { get; set; } = 10;
+        public int MsBetweenRetries { get; set; } = 60000;
     }
 }
