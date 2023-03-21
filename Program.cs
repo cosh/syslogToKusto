@@ -133,7 +133,7 @@ namespace syslogToKusto
                 {
                     if (eventCount > 0)
                     {
-                        string tempFile = Path.GetRandomFileName();
+                        string tempFile = Path.GetTempFileName();
                         File.WriteAllText(tempFile, sb.ToString());
 
                         ingestionJobs.Enqueue(new IngestionJob() { ToBeIngested = tempFile, BatchInfo = batchSettings });
@@ -168,8 +168,8 @@ namespace syslogToKusto
                     {
                         //Ingest from blobs according to the required properties
                         var kustoIngestionProperties = new KustoIngestionProperties(databaseName: kusto.DbName, tableName: job.BatchInfo.KustoTable);
-                        kustoIngestionProperties.SetAppropriateMappingReference(job.BatchInfo.MappingName, Kusto.Data.Common.DataSourceFormat.multijson);
-                        kustoIngestionProperties.Format = Kusto.Data.Common.DataSourceFormat.multijson;
+                        kustoIngestionProperties.SetAppropriateMappingReference(job.BatchInfo.MappingName, Kusto.Data.Common.DataSourceFormat.json);
+                        kustoIngestionProperties.Format = Kusto.Data.Common.DataSourceFormat.json;
 
                         logger.LogDebug($"About start ingestion into table {job.BatchInfo.KustoTable} using file {job.ToBeIngested}");
 
