@@ -225,7 +225,36 @@ namespace syslogToKusto
                 .Build();
 
             Settings settings = config.GetRequiredSection("Settings").Get<Settings>();
+
+            // Override any settings from environment variables, useful for Docker Container configurations
+            settings.ListenPort = GetEnvironmentVariable<int>(nameof(Settings.ListenPort), settings.ListenPort);
+            settings.SyslogServerName = GetEnvironmentVariable<string>(nameof(Settings.SyslogServerName), settings.SyslogServerName);
+            
+            settings.Kusto.ClientId = GetEnvironmentVariable<string>(nameof(SettingsKusto.ClientId), settings.Kusto.ClientId);
+            settings.Kusto.ClientSecret = GetEnvironmentVariable<string>(nameof(SettingsKusto.ClientSecret), settings.Kusto.ClientSecret);
+            settings.Kusto.ClusterName = GetEnvironmentVariable<string>(nameof(SettingsKusto.ClusterName), settings.Kusto.ClusterName);
+            settings.Kusto.TenantId = GetEnvironmentVariable<string>(nameof(SettingsKusto.TenantId), settings.Kusto.TenantId);
+            settings.Kusto.DbName = GetEnvironmentVariable<string>(nameof(SettingsKusto.DbName), settings.Kusto.DbName);
+            settings.Kusto.MaxRetries = GetEnvironmentVariable<int>(nameof(SettingsKusto.MaxRetries), settings.Kusto.MaxRetries);
+            settings.Kusto.MsBetweenRetries = GetEnvironmentVariable<int>(nameof(SettingsKusto.MsBetweenRetries), settings.Kusto.MsBetweenRetries);
+
+            settings.BatchSettings.KustoTable = GetEnvironmentVariable<string>(nameof(SettingsBatching.KustoTable), settings.BatchSettings.KustoTable);
+            settings.BatchSettings.MappingName = GetEnvironmentVariable<string>(nameof(SettingsBatching.MappingName), settings.BatchSettings.MappingName);
+            settings.BatchSettings.BatchLimitInMinutes = GetEnvironmentVariable<int>(nameof(SettingsBatching.BatchLimitInMinutes), settings.BatchSettings.BatchLimitInMinutes);
+            settings.BatchSettings.BatchLimitNumberOfEvents = GetEnvironmentVariable<int>(nameof(SettingsBatching.BatchLimitNumberOfEvents), settings.BatchSettings.BatchLimitNumberOfEvents);
+
             return settings;
+        }
+
+        private static T GetEnvironmentVariable<T>(string name, T defaultValue)
+        {
+            string value = Environment.GetEnvironmentVariable(name);
+            if (!string.IsNullOrEmpty(value))
+            {
+                return (T)Convert.ChangeType(value, typeof(T));
+            }
+
+            return defaultValue;
         }
     }
 }

@@ -2,12 +2,12 @@
 {
     public class SettingsBatching
     {
-        public string KustoTable { get; set; }
+        public string KustoTable { get; set; } = "syslogRaw";
 
-        public string MappingName { get; set; }
+        public string MappingName { get; set; } = "map";
 
-        public int BatchLimitInMinutes { get; set; }
+        public int BatchLimitInMinutes { get; set; } = 5;
 
-        public int BatchLimitNumberOfEvents { get; set; }
+        public int BatchLimitNumberOfEvents { get; set; } = 1000;
     }
 }
