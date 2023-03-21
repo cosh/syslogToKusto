@@ -14,7 +14,6 @@ namespace syslogToKusto
 {
     internal class Program
     {
-        private static readonly IPEndPoint _blankEndpoint = new IPEndPoint(IPAddress.Any, 0);
         private static readonly JsonSerializerOptions serializerOptions = new JsonSerializerOptions();
 
         static void Main(string[] args)
@@ -77,7 +76,9 @@ namespace syslogToKusto
             {
                 try
                 {
-                    var result = await udpSocket.ReceiveFromAsync(bufferMem, SocketFlags.None, _blankEndpoint);
+                    var endpoint = new IPEndPoint(IPAddress.Any, 0);
+
+                    var result = await udpSocket.ReceiveFromAsync(bufferMem, SocketFlags.None, endpoint);
 
                     syslogMessage = CreateMessageForKusto(Encoding.UTF8.GetString(bufferMem.ToArray(), 0, result.ReceivedBytes), result, syslogServerName);
 
@@ -96,7 +97,12 @@ namespace syslogToKusto
 
             helper.Payload = payload.Trim();
             helper.ReceivedBytes = result.ReceivedBytes;
-            helper.RemoteEndPoint = result.RemoteEndPoint;
+            
+            IPEndPoint endpoint = result.RemoteEndPoint as IPEndPoint;
+            if(endpoint != null) {
+                helper.RemoteEndPoint = new EndpointInfo() { AddressFamily = endpoint.Address.AddressFamily, Address = endpoint.Address.ToString(), Port = endpoint.Port };
+            }
+
             helper.SyslogServerName = syslogServerName;
 
             return JsonSerializer.Serialize(helper, serializerOptions);
