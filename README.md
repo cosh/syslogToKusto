@@ -26,6 +26,48 @@ In summary, **Syslog to Kusto** is a tool designed to help organizations ingest 
 // Create mapping command
 ////////////////////////////////////////////////////////////
 .create table syslogRaw ingestion json mapping 'map' '[{"column":"Payload", "Properties":{"Path":"$[\'Payload\']"}},{"column":"RemoteEndPoint", "Properties":{"Path":"$[\'RemoteEndPoint\']"}},{"column":"SyslogServerName", "Properties":{"Path":"$[\'SyslogServerName\']"}},{"column":"ReceivedBytes", "Properties":{"Path":"$[\'ReceivedBytes\']"}}]'
+
+// Create the update function
+.create-or-alter function with (folder = "Update") Update_Syslog() {
+syslogRaw
+| where ingestion_time() > ago(10m)
+| parse Payload with "<" Priority:int ">" message:string
+| extend message = iff(isempty( message), Payload, message), Priority = iff(isempty( Priority), int(-1), Priority)
+| project-away Payload
+| extend Address = tostring(RemoteEndPoint.Address), AddressFamily = tostring(RemoteEndPoint.AddressFamily), Port = toint(RemoteEndPoint.Port)
+| project-away RemoteEndPoint
+}
+
+// Create the syslog table and transform data
+.set-or-append syslog <| Update_Syslog
+
+// Enable the update policy
+.alter table syslog policy update
+```
+[
+    {
+        "IsEnabled": true,
+        "Source": "syslogRaw",
+        "Query": "Update_Syslog",
+        "IsTransactional": true,
+        "PropagateIngestionProperties": false
+    }
+]
+```
+
+// Create statistics by priority
+.create materialized-view with (backfill = true) priorityStats on table syslog
+{
+    syslog
+    | summarize ReceivedBytes = avg(ReceivedBytes) by Priority, timestamp = bin(ingestion_time(), 1h)
+}
+
+// Create statistics by address
+.create materialized-view with (backfill = true) addressStats on table syslog
+{
+    syslog
+    | summarize ReceivedBytes = avg(ReceivedBytes) by Address, timestamp = bin(ingestion_time(), 1h)
+}
 ```
 
 ## Configuration
