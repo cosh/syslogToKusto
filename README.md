@@ -30,7 +30,6 @@ In summary, **Syslog to Kusto** is a tool designed to help organizations ingest 
 // Create the update function
 .create-or-alter function with (folder = "Update") Update_Syslog() {
 syslogRaw
-| where ingestion_time() > ago(10m)
 | parse Payload with "<" Priority:int ">" message:string
 | extend message = iff(isempty( message), Payload, message), Priority = iff(isempty( Priority), int(-1), Priority)
 | project-away Payload
